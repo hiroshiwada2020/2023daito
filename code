@@ -1,0 +1,67 @@
+#ライブラリーのインポート
+import pandas as pd
+import re
+
+#ユーザーが西暦を手入力する
+year = input("年を入力してください (例: 2022): ")
+
+#エクセルファイルを開く
+file_path = '/content/保存しているエクセルファイルの名前.xlsx'
+all_sheets_data = []
+
+# 各シートを処理
+with pd.ExcelFile(file_path, engine="openpyxl") as xls:
+    for sheet_name in xls.sheet_names:
+# シートの名前から日付を抽出して加工
+# 例: "5月3日(火)" を "5/3"
+        date_match = re.match(r'(\d+)月(\d+)日', sheet_name)
+        if date_match:
+            month, day = date_match.groups()
+            date = f"{year}/{month}/{day}"
+        else:
+            print(f"シート名 {sheet_name} の日付が解析できませんでした")
+            continue
+# シートからデータを読み取り、
+# sheet_dataという名で格納
+        sheet_data = pd.read_excel(xls, sheet_name=sheet_name, header=None, skiprows=3)
+
+# sheet_dataから必要なデータを抽出
+# (最終行の1行前まで)
+
+# 時刻データ(A列(=0列目)を抽出し、
+# timeという名で格納
+        times = sheet_data.iloc[:-1, 0]
+# 入場者数データ(D列=(3列目)を抽出し、
+# entryという名で格納
+        entry = sheet_data.iloc[:-1, 3]
+# 滞留者数データ(E列(=4列目)を抽出し、
+# stayという名で格納
+        stay = sheet_data.iloc[:-1, 4]
+
+# 日付と時刻を結合し、列名をdatetimesに
+        datetimes = pd.to_datetime([f"{date} {time}" for time in times])
+
+# 新しいDataFrameの作成
+# 格納済みのdatetimes、entry、stayデータを、列名datetime、entry、stayとして、all_sheets_dataにまとめる。
+        sheet_dataframe = pd.DataFrame({
+            "datetime": datetimes,
+            "entry": entry,
+            "stay": stay
+        })
+        all_sheets_data.append(sheet_dataframe)
+
+# DataFrameを結合
+# シート毎のall_sheets_dataを1つに連結
+# final_dataという名で格納
+final_data = pd.concat(all_sheets_data)
+final_data.set_index("datetime", inplace=True)
+
+# 全体の日付範囲を取得
+#初日の午前0時0分から最終日の午後23時30分までの30分間隔の連続データ
+full_range_index = pd.date_range(start=final_data.index.min().normalize(), end=final_data.index.max().normalize() + pd.Timedelta(days=1) - pd.Timedelta(minutes=30), freq='30T')
+
+# 欠損データを0で補完
+final_data = final_data.reindex(full_range_index).fillna(0)
+
+# final_dataをCSVファイルとして保存（名前は'processed_data.csv'）
+final_data.to_csv('processed_data.csv')
